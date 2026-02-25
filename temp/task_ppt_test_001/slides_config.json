@@ -1,0 +1,31 @@
+[
+  {
+    "type": "title",
+    "title": "AI Technology Trends 2024",
+    "subtitle": "The Future of Artificial Intelligence"
+  },
+  {
+    "type": "content",
+    "title": "Key Trends",
+    "content": [
+      "Generative AI and Large Language Models",
+      "Multimodal AI Systems",
+      "AI Agents and Autonomous Systems",
+      "Edge AI and On-Device Processing"
+    ]
+  },
+  {
+    "type": "summary",
+    "title": "Conclusions",
+    "points": [
+      "AI is becoming more accessible",
+      "Multimodal capabilities are expanding",
+      "Agent systems are gaining traction"
+    ]
+  },
+  {
+    "type": "closing",
+    "title": "Thank You",
+    "subtitle": "Questions & Discussion"
+  }
+]

@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(timeout 10s npm run:*)",
+      "Bash(timeout 15s npm run:*)",
+      "Bash(npm run:*)",
+      "Bash(curl:*)",
+      "Bash(echo Trying to find PID...:*)",
+      "Bash(sleep 2:*)",
+      "Bash(kill:*)",
+      "WebSearch",
+      "Bash(gh search:*)",
+      "Bash(xargs -r kill echo \"Server stopped\")",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(ls:*)",
+      "Bash(npm install:*)",
+      "Bash(cd:*)",
+      "Bash(pkill:*)",
+      "Bash(netstat:*)",
+      "Bash(echo Could not kill process:*)",
+      "Bash(taskkill:*)",
+      "Bash(git init:*)",
+      "Bash(git remote:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

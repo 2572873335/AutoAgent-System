@@ -1,0 +1,34 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules
+
+# Build output
+dist
+dist-ssr
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage
+
+# Temporary files
+*.tmp
+*.temp
+server/code-sandbox/*.cjs
+server/generated-pdfs/*.pdf
