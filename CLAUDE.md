@@ -15,6 +15,7 @@ Kimi Agent（自动 Agent 集群构建）是一个 AI 驱动的任务编排系�
 - **后端**: Express + Node.js (CommonJS)
 - **AI**: DeepSeek API (模型: `deepseek-chat`)
 - **搜索**: DuckDuckGo HTML 搜索（免费，无需 API Key）
+- **图像生成**: Stability AI / DALL-E (免费额度)
 - **构建工具**: Vite 7，使用 `@/*` 路径别名映射到 `./src/*`
 
 ## 常用命令
@@ -207,6 +208,28 @@ python tools/diagnose.py --fix-ddgs
 - `POST /api/sandbox/execute` - 在沙箱中执行代码
 - `POST /api/generate-pdf` - 生成 PDF 报告
 
+### 图像生成功能
+
+系统支持多种图像生成方式，通过 `server/services/imageGenerator.cjs` 实现：
+
+**支持的 API：**
+| API | 免费额度 | 说明 |
+|-----|----------|------|
+| Stability AI | ✅ 免费 25 积分 | 推荐，稳定可靠 |
+| DALL-E | ⚠️ 有免费额 | 需要 OpenAI API Key |
+
+**环境配置：**
+```bash
+# Stability AI (推荐)
+STABILITY_API_KEY=sk-your-stability-key
+
+# 或 OpenAI DALL-E
+OPENAI_API_KEY=sk-your-openai-key
+```
+
+**使用方式：**
+系统会自动识别图像生成任务（如"生成图片"、"分镜"、"视频"等关键词），并调用图像生成 API。
+
 ## 环境变量配置
 
 创建 `.env` 文件：
@@ -215,11 +238,20 @@ python tools/diagnose.py --fix-ddgs
 # DeepSeek API (任务执行)
 DEEPSEEK_API_KEY=your-deepseek-key
 
+# 图像生成 API (免费)
+# Stability AI: https://platform.stability.ai/
+STABILITY_API_KEY=your-stability-key
+
+# 或 OpenAI DALL-E
+# OPENAI_API_KEY=your-openai-key
+
 PORT=3001
 VITE_API_URL=http://localhost:3001/api
 ```
 
-**注意**：联网搜索使用 DuckDuckGo HTML（免费），无需额外 API Key。
+**注意**：
+- 联网搜索使用 DuckDuckGo HTML（免费），无需额外 API Key
+- 图像生成推荐使用 Stability AI（新用户免费 25 积分）
 
 ## TypeScript 配置
 

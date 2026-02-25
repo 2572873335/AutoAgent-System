@@ -7,6 +7,8 @@ const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs/promises');
 const { access, constants } = require('fs/promises');
+const { miniMaxService } = require('../services/minimax.cjs');
+const { imageGeneratorService } = require('../services/imageGenerator.cjs');
 
 // 工具定义（用于 DeepSeek Function Calling）
 const TOOL_DEFINITIONS = [
@@ -88,6 +90,69 @@ const TOOL_DEFINITIONS = [
   {
     type: 'function',
     function: {
+      name: 'generate_image',
+      description: 'Generate a single image using MiniMax AI. Use this when the user requests to create images, storyboards, or video frames. Supports Pixar style, cinematic style, and more.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: {
+            type: 'string',
+            description: 'The image description/prompt (max 500 characters). Be descriptive and include details about style, lighting, and composition.'
+          },
+          size: {
+            type: 'string',
+            enum: ['512x512', '768x768', '1024x1024', '1280x720', '1920x1080'],
+            description: 'Image size (default 1024x1024)',
+            default: '1024x1024'
+          },
+          style: {
+            type: 'string',
+            enum: ['natural', 'pixar', 'cinematic', 'anime', 'realistic'],
+            description: 'Image style (default pixar for storyboards)',
+            default: 'pixar'
+          }
+        },
+        required: ['prompt']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_image_batch',
+      description: 'Generate multiple images in batch using MiniMax AI. Use this when the user requests multiple images, such as storyboard frames or video scenes. This is more efficient than calling generate_image multiple times.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompts: {
+            type: 'array',
+            description: 'Array of image prompts (max 20 prompts)',
+            items: {
+              type: 'string',
+              description: 'Image description/prompt'
+            },
+            maxItems: 20
+          },
+          size: {
+            type: 'string',
+            enum: ['512x512', '768x768', '1024x1024', '1280x720', '1920x1080'],
+            description: 'Image size (default 1024x1024)',
+            default: '1024x1024'
+          },
+          style: {
+            type: 'string',
+            enum: ['natural', 'pixar', 'cinematic', 'anime', 'realistic'],
+            description: 'Image style (default pixar)',
+            default: 'pixar'
+          }
+        },
+        required: ['prompts']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'read_file',
       description: 'Read the content of a file in the workspace. Use this when you need to access or analyze an existing file.',
       parameters: {
@@ -161,6 +226,20 @@ class ToolExecutor {
           ]);
           break;
 
+        case 'generate_image':
+          result = await Promise.race([
+            this._generateImage(args),
+            timeoutPromise
+          ]);
+          break;
+
+        case 'generate_image_batch':
+          result = await Promise.race([
+            this._generateImageBatch(args),
+            timeoutPromise
+          ]);
+          break;
+
         case 'read_file':
           result = await Promise.race([
             this._readFile(args, workspace),
@@ -210,6 +289,20 @@ class ToolExecutor {
     // 查询长度限制
     if (args.query && args.query.length > 200) {
       return 'Query exceeds maximum length of 200 characters';
+    }
+
+    // 图片生成提示词长度限制
+    if (args.prompt && args.prompt.length > 500) {
+      return 'Prompt exceeds maximum length of 500 characters';
+    }
+
+    // 批量生成提示词限制
+    if (args.prompts && args.prompts.length > 20) {
+      return 'Maximum 20 prompts allowed in batch';
+    }
+
+    if (args.prompts && args.prompts.some(p => p && p.length > 500)) {
+      return 'Each prompt must be under 500 characters';
     }
 
     // 文件名长度限制
@@ -377,6 +470,60 @@ class ToolExecutor {
         });
       });
     });
+  }
+
+  /**
+   * 生成单张图片 - 使用 ImageGeneratorService (支持 Stability AI / DALL-E)
+   */
+  async _generateImage(args) {
+    const { prompt, size = '1024x1024', style = 'pixar' } = args;
+
+    console.log(`[ImageGen] Generating image: ${prompt.substring(0, 50)}...`);
+
+    const result = await imageGeneratorService.generateImage(prompt, { size, style });
+
+    if (result.success) {
+      return {
+        success: true,
+        prompt,
+        size,
+        style,
+        image_url: result.imageUrl,
+        provider: result.provider,
+        message: `Image generated successfully (${result.provider})`
+      };
+    } else {
+      throw new Error(result.error || 'Image generation failed');
+    }
+  }
+
+  /**
+   * 批量生成图片 - 使用 ImageGeneratorService
+   */
+  async _generateImageBatch(args) {
+    const { prompts, size = '1024x1024', style = 'pixar' } = args;
+
+    console.log(`[ImageGen] Generating batch of ${prompts.length} images`);
+
+    const result = await imageGeneratorService.generateImageBatch(prompts, { size, style });
+
+    if (result.success || result.successful > 0) {
+      return {
+        success: true,
+        total: result.total,
+        successful: result.successful,
+        failed: result.failed,
+        images: result.images.map(img => ({
+          index: img.index,
+          success: img.success,
+          image_url: img.url,
+          prompt: img.prompt?.substring(0, 100)
+        })),
+        message: `Generated ${result.successful}/${result.total} images successfully`
+      };
+    } else {
+      throw new Error('Batch image generation failed');
+    }
   }
 
   /**

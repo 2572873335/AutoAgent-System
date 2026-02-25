@@ -5,6 +5,50 @@ import { AgentGenerator } from './agentGenerator';
 import { GitHubSearcher } from './githubSearcher';
 import * as api from './api';
 
+// p-limit 兼容实现（用于并发控制）
+function createPLimit(concurrency: number) {
+  const queue: Array<() => Promise<unknown>> = [];
+  let activeCount = 0;
+
+  const next = () => {
+    activeCount--;
+    if (queue.length > 0) {
+      const fn = queue.shift();
+      if (fn) {
+        Promise.resolve(fn()).catch(() => {});
+      }
+    }
+  };
+
+  const run = async (fn: () => Promise<unknown>) => {
+    activeCount++;
+    try {
+      return await fn();
+    } finally {
+      next();
+    }
+  };
+
+  return (fn: () => Promise<unknown>) => {
+    return new Promise((resolve, reject) => {
+      const wrappedFn = async () => {
+        try {
+          const result = await fn();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      };
+
+      if (activeCount < concurrency) {
+        run(wrappedFn).catch(reject);
+      } else {
+        queue.push(wrappedFn);
+      }
+    });
+  };
+}
+
 export class Orchestrator {
   private static instance: Orchestrator;
   private tasks: Map<string, Task> = new Map();
@@ -12,6 +56,7 @@ export class Orchestrator {
   private githubSearcher: GitHubSearcher;
   private listeners: Set<(task: Task) => void> = new Set();
   private useRealLLM: boolean = true;
+  private concurrencyLimit: ReturnType<typeof createPLimit>;
   
   static getInstance(): Orchestrator {
     if (!Orchestrator.instance) {
@@ -23,6 +68,8 @@ export class Orchestrator {
   private constructor() {
     this.agentGenerator = AgentGenerator.getInstance();
     this.githubSearcher = GitHubSearcher.getInstance();
+    // 并发限制：最多同时执行5个任务
+    this.concurrencyLimit = createPLimit(5);
     this.loadTasksFromStorage();
   }
 
@@ -202,7 +249,12 @@ export class Orchestrator {
 
   private determineTaskType(description: string): string {
     const lower = description.toLowerCase();
-    
+
+    // 检测图片/视频生成任务
+    if (this.isImageGenerationTask(description)) {
+      return 'image_generation';
+    }
+
     if (lower.includes('research') || lower.includes('find') || lower.includes('search')) {
       return 'research';
     }
@@ -224,8 +276,51 @@ export class Orchestrator {
     if (lower.includes('api') || lower.includes('integrate') || lower.includes('connect')) {
       return 'integration';
     }
-    
+
     return 'general';
+  }
+
+  /**
+   * 检测是否为图片生成任务
+   */
+  private isImageGenerationTask(description: string): boolean {
+    const lower = description.toLowerCase();
+    const imageKeywords = [
+      '图片', '图像', '分镜', '视频', '画', '生成图片', '生成图像',
+      'image', 'picture', 'photo', 'video', 'storyboard',
+      'frame', 'illustration', 'animation', '动画',
+      '做视频', '视频制作', '分镜图', '宣传海报'
+    ];
+
+    return imageKeywords.some(keyword => lower.includes(keyword));
+  }
+
+  /**
+   * 估算需要的图片数量
+   */
+  private estimateImageCount(description: string): number {
+    const lower = description.toLowerCase();
+
+    // 尝试从描述中提取数字
+    const numberMatch = lower.match(/(\d+)\s*(张|个|幅|帧|page|slides?|frames?|images?)/i);
+    if (numberMatch) {
+      return Math.min(Math.max(parseInt(numberMatch[1]), 1), 100);
+    }
+
+    // 尝试匹配常见的数量模式
+    if (lower.includes('很多') || lower.includes('many') || lower.includes('multiple')) {
+      return 10;
+    }
+
+    // 默认根据任务类型估算
+    if (lower.includes('视频') || lower.includes('video')) {
+      return 30; // 视频通常需要较多分镜
+    }
+    if (lower.includes('storyboard') || lower.includes('分镜')) {
+      return 10;
+    }
+
+    return 5; // 默认生成5张
   }
 
   private assessComplexity(description: string): 'simple' | 'medium' | 'complex' {
@@ -255,7 +350,12 @@ export class Orchestrator {
 
   private async decomposeTaskFallback(description: string, taskType: string, complexity: string): Promise<SubTask[]> {
     const subTasks: SubTask[] = [];
-    
+
+    // Special handling for image generation tasks
+    if (taskType === 'image_generation') {
+      return this.decomposeImageGenerationTask(description, complexity);
+    }
+
     const decompositions: Record<string, Record<string, string[]>> = {
       research: {
         simple: ['Search for information', 'Summarize findings'],
@@ -301,7 +401,7 @@ export class Orchestrator {
 
     const templates = decompositions[taskType]?.[complexity] || decompositions.general[complexity];
     const baseTimestamp = Date.now();
-    
+
     for (let i = 0; i < templates.length; i++) {
       const subTask: SubTask = {
         id: `subtask_${baseTimestamp}_${i}`,
@@ -315,6 +415,100 @@ export class Orchestrator {
     }
 
     return subTasks;
+  }
+
+  /**
+   * 分解图片生成任务
+   * 智能估算需要的图片数量，并将大任务拆分为可管理的批次
+   */
+  private decomposeImageGenerationTask(description: string, complexity: string): SubTask[] {
+    const imageCount = this.estimateImageCount(description);
+    const subTasks: SubTask[] = [];
+    const baseTimestamp = Date.now();
+
+    // 根据图片数量决定分解策略
+    if (imageCount <= 5) {
+      // 小数量：生成单个分镜描述任务
+      subTasks.push({
+        id: `subtask_${baseTimestamp}_0`,
+        description: `Create storyboard with ${imageCount} scenes`,
+        dependencies: [],
+        status: 'pending',
+        input: {
+          parentTask: description,
+          imageCount,
+          step: 1,
+          action: 'create_storyboard'
+        },
+        createdAt: baseTimestamp,
+      });
+    } else {
+      // 大数量：分解为多个批次
+      const batchSize = 10;
+      const batchCount = Math.ceil(imageCount / batchSize);
+
+      // 首先创建故事板规划任务
+      subTasks.push({
+        id: `subtask_${baseTimestamp}_0`,
+        description: `Create detailed storyboard plan for ${imageCount} images`,
+        dependencies: [],
+        status: 'pending',
+        input: {
+          parentTask: description,
+          imageCount,
+          batchCount,
+          step: 1,
+          action: 'plan_storyboard'
+        },
+        createdAt: baseTimestamp,
+      });
+
+      // 然后创建批次生成任务（可以并行）
+      let previousBatchId = `subtask_${baseTimestamp}_0`;
+      for (let i = 0; i < batchCount; i++) {
+        const startNum = i * batchSize + 1;
+        const endNum = Math.min((i + 1) * batchSize, imageCount);
+        const batchImageCount = endNum - startNum + 1;
+
+        // 优化：批次之间可以有依赖关系，但批次内部并行
+        const batchId = `subtask_${baseTimestamp}_${i + 1}`;
+        subTasks.push({
+          id: batchId,
+          description: `Generate storyboard images ${startNum}-${endNum} (batch ${i + 1}/${batchCount})`,
+          dependencies: [previousBatchId],
+          status: 'pending',
+          input: {
+            parentTask: description,
+            batchIndex: i,
+            startNum,
+            endNum,
+            imageCount: batchImageCount,
+            action: 'generate_batch'
+          },
+          createdAt: baseTimestamp,
+        });
+
+        previousBatchId = batchId;
+      }
+    }
+
+    return subTasks;
+  }
+
+  /**
+   * 递归分解大任务为小任务组
+   * 用于 LLM 返回大量子任务时进行分组
+   */
+  private splitIntoGroups(subTasks: SubTask[], maxGroupSize: number = 10): SubTask[][] {
+    if (subTasks.length <= maxGroupSize) {
+      return [subTasks];
+    }
+
+    const groups: SubTask[][] = [];
+    for (let i = 0; i < subTasks.length; i += maxGroupSize) {
+      groups.push(subTasks.slice(i, i + maxGroupSize));
+    }
+    return groups;
   }
 
   private async discoverOrGenerateAgents(task: Task, subTasks: SubTask[]): Promise<Agent[]> {
@@ -359,20 +553,31 @@ export class Orchestrator {
   private createExecutionPlan(subTasks: SubTask[]): ExecutionPlan {
     const groups: string[][] = [];
     const completed = new Set<string>();
-    
+
+    // 检测是否为图片生成任务
+    const isImageGenerationTask = subTasks.some(st =>
+      st.description.includes('image') ||
+      st.description.includes('图片') ||
+      st.description.includes('storyboard') ||
+      st.description.includes('分镜') ||
+      (st.input as Record<string, unknown>)?.action === 'generate_batch'
+    );
+
     while (completed.size < subTasks.length) {
       const group: string[] = [];
-      
+
       for (const subTask of subTasks) {
         if (completed.has(subTask.id)) continue;
-        
+
         const depsSatisfied = subTask.dependencies.every(dep => completed.has(dep));
-        
+
         if (depsSatisfied) {
           group.push(subTask.id);
         }
       }
-      
+
+      // 如果没有满足依赖的任务，但还有未完成的子任务，
+      // 尝试打破循环：将剩余任务加入
       if (group.length === 0) {
         for (const subTask of subTasks) {
           if (!completed.has(subTask.id)) {
@@ -380,14 +585,44 @@ export class Orchestrator {
           }
         }
       }
-      
+
+      // 图片生成任务优化：将批次任务尽可能并行化
+      if (isImageGenerationTask && group.length > 1) {
+        // 找出批次生成任务，让它们尽可能并行
+        const batchTasks = group.filter(id => {
+          const st = subTasks.find(s => s.id === id);
+          return st?.input && (st.input as Record<string, unknown>)?.action === 'generate_batch';
+        });
+
+        // 批次任务独立成组以实现最大并行
+        if (batchTasks.length > 1) {
+          // 首先添加规划任务（如果有）
+          const planningTasks = group.filter(id => !batchTasks.includes(id));
+          if (planningTasks.length > 0) {
+            groups.push(planningTasks);
+            for (const id of planningTasks) {
+              completed.add(id);
+            }
+          }
+
+          // 然后每个批次任务作为独立组（实现真正并行）
+          for (const batchId of batchTasks) {
+            groups.push([batchId]);
+            completed.add(batchId);
+          }
+          continue;
+        }
+      }
+
       groups.push(group);
       for (const id of group) {
         completed.add(id);
       }
     }
 
-    const estimatedTime = subTasks.length * 5;
+    // 估算时间（图片生成任务时间更长）
+    const baseTimePerTask = isImageGenerationTask ? 15 : 5;
+    const estimatedTime = subTasks.length * baseTimePerTask;
 
     return {
       parallelGroups: groups,
@@ -400,12 +635,40 @@ export class Orchestrator {
     const task = this.tasks.get(taskId);
     if (!task) return;
 
+    // 检测是否为图片生成任务，使用更高的并发
+    const isImageTask = task.subTasks.some(st =>
+      st.description.includes('image') ||
+      st.description.includes('图片') ||
+      st.description.includes('storyboard') ||
+      st.description.includes('分镜') ||
+      st.description.includes('Generate') && st.description.includes('batch')
+    );
+
+    // 图片生成任务可以使用更高并发（API 限制）
+    const effectiveLimit = isImageTask ? createPLimit(3) : this.concurrencyLimit;
+
+    if (isImageTask) {
+      await this.log(taskId, 'info', `Using optimized parallel execution for image generation (max 3 concurrent)`);
+    }
+
     for (let i = 0; i < plan.parallelGroups.length; i++) {
       const group = plan.parallelGroups[i];
-      
-      await this.log(taskId, 'info', `Executing parallel group ${i + 1}/${plan.parallelGroups.length} (${group.length} subtasks)`);
-      
-      await Promise.all(group.map(subTaskId => this.executeSubTask(taskId, subTaskId)));
+
+      await this.log(taskId, 'info', `Executing parallel group ${i + 1}/${plan.parallelGroups.length} (${group.length} subtasks in parallel)`);
+
+      // 使用并发限制器执行组内任务
+      const groupPromises = group.map(subTaskId =>
+        effectiveLimit(() => this.executeSubTask(taskId, subTaskId))
+      );
+
+      await Promise.all(groupPromises);
+
+      // 记录该组完成情况
+      const completedInGroup = group.filter(id => {
+        const st = task.subTasks.find(s => s.id === id);
+        return st?.status === 'completed';
+      });
+      await this.log(taskId, 'info', `Group ${i + 1} completed: ${completedInGroup.length}/${group.length} subtasks done`);
     }
   }
 

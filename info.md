@@ -30,7 +30,10 @@ spinner, switch, table, tabs, textarea, toggle-group, toggle, tooltip
 src/
 ├── components/          # React 组件
 │   ├── ui/             # Radix UI 组件
-│   └── *.tsx           # 业务组件
+│   ├── ExecutionFlow.tsx # 执行流程展示
+│   ├── TaskInput.tsx   # 任务输入组件
+│   ├── ResultViewer.tsx # 结果查看器
+│   └── ...
 ├── services/           # 业务逻辑
 │   ├── orchestrator.ts # 任务编排器
 │   ├── agentGenerator.ts # Agent 生成器
@@ -41,14 +44,21 @@ src/
 └── types/              # TypeScript 类型
 
 server/
-└── index.cjs           # Express 后端服务
+├── index.cjs           # Express 后端服务
+├── services/
+│   ├── deepseek.cjs    # DeepSeek API 服务
+│   └── imageGenerator.cjs # 图像生成服务
+└── tools/
+    └── registry.cjs    # 工具注册表
 
 tools/                  # Python 工具脚本
 ├── search_tool.py      # DuckDuckGo 搜索工具
-└── diagnose.py         # 问题诊断工具
+├── ppt_generator.py   # PPT 生成工具
+└── diagnose.py        # 问题诊断工具
 
 code-sandbox/           # Agent 代码沙箱目录
 data/                   # 数据存储目录
+temp/                   # 临时文件目录
 ```
 
 ## 核心服务
@@ -87,6 +97,10 @@ data/                   # 数据存储目录
 ### PDF
 - `POST /api/generate-pdf` - 生成 PDF 报告
 - `GET /api/pdfs/:filename` - 获取 PDF 文件
+
+### 图像生成
+- `POST /api/agent/execute-stream` - SSE 流式执行（支持图像生成）
+- `GET /api/tools/list` - 获取可用工具列表
 
 ### Sandbox
 - `POST /api/sandbox/execute` - 沙箱执行代码
@@ -159,3 +173,38 @@ python tools/ppt_generator.py --title "标题" --slides "内容1|内容2|内容3
 # 使用 JSON 配置文件
 python tools/ppt_generator.py --json slides.json --output output.pptx
 ```
+
+## 图像生成配置
+
+### 支持的 API
+
+| API | 免费额度 | 注册地址 |
+|-----|----------|----------|
+| Stability AI | 25 积分 | https://platform.stability.ai/ |
+| DALL-E | 有免费额 | https://platform.openai.com/ |
+
+### 环境变量配置
+
+在 `.env` 文件中添加：
+
+```bash
+# Stability AI (推荐)
+STABILITY_API_KEY=sk-your-stability-key
+
+# 或 OpenAI DALL-E
+OPENAI_API_KEY=sk-your-openai-key
+```
+
+### 功能说明
+
+系统会自动识别以下关键词的图像生成任务：
+- 中文：图片、图像、分镜、视频、画、生成图片
+- 英文：image、picture、photo、video、storyboard、frame、animation
+
+**任务分解：**
+- 小于等于 5 张：单个任务
+- 大于 5 张：自动拆分为多个批次并行生成
+
+**执行优化：**
+- 批次任务真正并行执行
+- 前端实时显示批次进度和状态

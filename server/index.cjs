@@ -16,6 +16,7 @@ const execAsync = util.promisify(exec);
 // ==================== NEW TOOL SYSTEM IMPORTS ====================
 const { TOOL_DEFINITIONS, toolExecutor } = require('./tools/registry.cjs');
 const { deepseekService } = require('./services/deepseek.cjs');
+const { miniMaxService } = require('./services/minimax.cjs');
 const { generateTaskId, isValidTaskId } = require('./utils/id.cjs');
 
 // p-limit for concurrency control - using fallback implementation
@@ -571,8 +572,11 @@ When you don't need any tools, provide a direct response.
 Available tools:
 1. web_search - Search the web for current information
 2. generate_ppt - Create PowerPoint presentations
-3. read_file - Read files from the workspace
+3. generate_image - Generate a single image (supports pixar, cinematic, anime, realistic styles)
+4. generate_image_batch - Generate multiple images at once (for storyboards, video frames)
+5. read_file - Read files from the workspace
 
+For image generation tasks (storyboards, video frames, illustrations), prefer using generate_image_batch for efficiency.
 Always explain your reasoning before making tool calls.`
       },
       {
