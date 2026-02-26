@@ -107,6 +107,43 @@ python tools/ppt_generator.py --title "标题" --slides "内容1|内容2|内容3
 python tools/ppt_generator.py --json slides.json --output output.pptx
 ```
 
+## Claude Code Skills
+
+本项目集成了 Claude Code Skills，增强 AI Agent 的专业能力。
+
+### Skills 来源
+
+- [anthropics/skills](https://github.com/anthropics/skills) - Claude Code 官方技能库
+- [HKUDS/nanobot](https://github.com/HKUDS/nanobot) - Claude Code 社区技能库
+
+### 可用 Skills
+
+| Skill | 用途 |
+|------|------|
+| github | GitHub CLI 操作 |
+| doc-coauthoring | 文档协作编写 |
+| mcp-builder | MCP Server 开发 |
+| clawhub | Skill 注册表搜索 |
+| canvas-design | Canvas 设计 |
+| algorithmic-art | 算法艺术生成 |
+| docx | Word 文档处理 |
+| frontend-design | 前端设计 |
+| internal-comms | 内部沟通 |
+| memory | 记忆管理 |
+| pdf | PDF 处理 |
+| pptx | PowerPoint 处理 |
+| skill-creator | 技能创建工具 |
+| slack-gif-creator | Slack GIF 创建 |
+| summarize | 内容摘要 |
+| theme-factory | 主题工厂 |
+| tmux | Tmux 会话管理 |
+| weather | 天气查询 |
+| web-artifacts-builder | Web 产物构建 |
+| webapp-testing | Web 应用测试 |
+| xlsx | Excel 处理 |
+| cron | Cron 表达式处理 |
+| brand-guidelines | 品牌规范检查 |
+
 ## 使用方法
 
 1. 在任务输入框中描述你的任务（如 "Research the latest AI trends and summarize findings"）
