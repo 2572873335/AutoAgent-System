@@ -32,6 +32,31 @@ export interface DownloadItem {
   name: string;
   url: string;
   size?: string;
+  type?: string; // MIME type or file extension
+  previewable?: boolean; // Whether this file can be previewed
+}
+
+// File preview related types
+export type PreviewFileType = 'pdf' | 'image' | 'text' | 'markdown' | 'pptx' | 'unknown';
+
+export interface PreviewFile {
+  name: string;
+  url: string;
+  size?: string;
+  type: PreviewFileType;
+  mimeType?: string;
+}
+
+export interface FilePreviewProps {
+  file: PreviewFile;
+  className?: string;
+}
+
+export interface FilePreviewDialogProps {
+  file: PreviewFile | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onDownload?: () => void;
 }
 
 export interface StreamState {

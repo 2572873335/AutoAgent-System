@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play, Square, RotateCcw, Loader2, CheckCircle2, XCircle,
-  Search, Presentation, FileText, Download, Wrench,
+  Search, Presentation, FileText, Wrench,
   Brain, Sparkles, AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,13 +11,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useAgentStream } from '@/hooks/useAgentStream';
+import { FileGallery } from './FileGallery';
 import type { ToolDefinition } from '@/types';
 
 interface TaskExecutorProps {
   className?: string;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002/api';
 
 const toolIcons: Record<string, typeof Search> = {
   web_search: Search,
@@ -281,30 +282,16 @@ export function TaskExecutor({ className }: TaskExecutorProps) {
                   </motion.div>
                 )}
 
-                {/* 下载链接 */}
+                {/* 下载链接 - 使用 FileGallery 组件 */}
                 {state.downloads.length > 0 && (
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="space-y-2"
                   >
-                    <h4 className="text-sm font-medium text-slate-400">Downloads</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {state.downloads.map((download, index) => (
-                        <a
-                          key={index}
-                          href={`${API_URL}${download.url}`}
-                          download={download.name}
-                          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-cyan-950/50 border border-cyan-800 text-cyan-400 hover:bg-cyan-900/50 transition-colors"
-                        >
-                          <Download className="h-4 w-4" />
-                          <span className="text-sm">{download.name}</span>
-                          {download.size && (
-                            <span className="text-xs text-cyan-500">({download.size})</span>
-                          )}
-                        </a>
-                      ))}
-                    </div>
+                    <FileGallery
+                      files={state.downloads}
+                      title="生成的文件"
+                    />
                   </motion.div>
                 )}
 

@@ -6,7 +6,6 @@
 const fetch = require('node-fetch');
 
 const KIMI_API_URL = 'https://api.deepseek.com/v1/chat/completions';
-const KIMI_API_KEY = process.env.DEEPSEEK_API_KEY;
 
 // 重试配置
 const RETRY_CONFIG = {
@@ -28,14 +27,20 @@ function delay(ms) {
 class DeepSeekService {
   constructor() {
     this.apiUrl = KIMI_API_URL;
-    this.apiKey = KIMI_API_KEY;
+  }
+
+  /**
+   * 获取 API Key（实时读取环境变量）
+   */
+  getApiKey() {
+    return process.env.DEEPSEEK_API_KEY;
   }
 
   /**
    * 检查 API Key 是否配置
    */
   isConfigured() {
-    return !!this.apiKey;
+    return !!this.getApiKey();
   }
 
   /**
@@ -92,7 +97,7 @@ class DeepSeekService {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.apiKey}`
+            'Authorization': `Bearer ${this.getApiKey()}`
           },
           body: JSON.stringify(requestBody),
           signal: controller.signal

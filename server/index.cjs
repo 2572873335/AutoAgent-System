@@ -1,11 +1,30 @@
+const path = require('path');
+const fs = require('fs');
+
+// ==================== LOAD ENVIRONMENT VARIABLES FIRST ====================
+// Must be loaded before any service imports that depend on process.env
+// Use path.resolve with __dirname to ensure correct path regardless of cwd
+const serverDir = __dirname || path.dirname(process.argv[1]);
+const envPath = path.resolve(serverDir, '..', '.env');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf-8');
+  envContent.split('\n').forEach(line => {
+    const [key, ...valueParts] = line.split('=');
+    if (key && valueParts.length > 0 && !key.startsWith('#')) {
+      const value = valueParts.join('=').trim();
+      if (value && !process.env[key]) {
+        process.env[key] = value.replace(/^["']|["']$/g, '');
+      }
+    }
+  });
+}
+
 const PDFDocument = require('pdfkit');
 const cron = require('node-cron');
 
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
-const path = require('path');
-const fs = require('fs');
 const fsPromises = require('fs/promises');
 const { exec } = require('child_process');
 const util = require('util');
@@ -57,21 +76,6 @@ function createPLimit(concurrency) {
 
 // Concurrency limiter (max 5 concurrent tasks)
 const limit = createPLimit(5);
-
-// Load environment variables from .env file
-const envPath = path.join(__dirname, '..', '.env');
-if (fs.existsSync(envPath)) {
-  const envContent = fs.readFileSync(envPath, 'utf-8');
-  envContent.split('\n').forEach(line => {
-    const [key, ...valueParts] = line.split('=');
-    if (key && valueParts.length > 0 && !key.startsWith('#')) {
-      const value = valueParts.join('=').trim();
-      if (value && !process.env[key]) {
-        process.env[key] = value.replace(/^["']|["']$/g, '');
-      }
-    }
-  });
-}
 
 const PORT = process.env.PORT || 3001;
 const CODE_DIR = path.join(__dirname, 'code-sandbox');

@@ -421,7 +421,7 @@ export class Orchestrator {
    * 分解图片生成任务
    * 智能估算需要的图片数量，并将大任务拆分为可管理的批次
    */
-  private decomposeImageGenerationTask(description: string, complexity: string): SubTask[] {
+  private decomposeImageGenerationTask(description: string, _complexity: string): SubTask[] {
     const imageCount = this.estimateImageCount(description);
     const subTasks: SubTask[] = [];
     const baseTimestamp = Date.now();
@@ -493,22 +493,6 @@ export class Orchestrator {
     }
 
     return subTasks;
-  }
-
-  /**
-   * 递归分解大任务为小任务组
-   * 用于 LLM 返回大量子任务时进行分组
-   */
-  private splitIntoGroups(subTasks: SubTask[], maxGroupSize: number = 10): SubTask[][] {
-    if (subTasks.length <= maxGroupSize) {
-      return [subTasks];
-    }
-
-    const groups: SubTask[][] = [];
-    for (let i = 0; i < subTasks.length; i += maxGroupSize) {
-      groups.push(subTasks.slice(i, i + maxGroupSize));
-    }
-    return groups;
   }
 
   private async discoverOrGenerateAgents(task: Task, subTasks: SubTask[]): Promise<Agent[]> {

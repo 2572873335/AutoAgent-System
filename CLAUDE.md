@@ -201,12 +201,49 @@ python tools/diagnose.py --fix-ddgs
 | PDF 生成失败 | 检查 `server/generated-pdfs` 目录权限 |
 
 后端 API 端点（`server/index.cjs`）：
-- `POST /api/kimi/decompose-task` - LLM 任务分解
-- `POST /api/kimi/generate-agent` - 生成 Agent JavaScript 代码
-- `POST /api/kimi/execute` - 执行子任务（研究任务自动使用搜索）
+
+**旧版端点（已弃用）：**
+- `POST /api/kimi/decompose-task` - LLM 任务分解（弃用）
+- `POST /api/kimi/generate-agent` - 生成 Agent JavaScript 代码（弃用）
+- `POST /api/kimi/execute` - 执行子任务（弃用）
+
+**新版工具系统：**
+- `POST /api/agent/execute-stream` - SSE 流式任务执行（支持工具调用）
+- `GET /api/tools/list` - 获取可用工具列表
+- `GET /api/files/:taskId/:filename` - 安全下载任务生成的文件
+
+**其他端点：**
 - `POST /api/search` - 直接调用网页搜索
 - `POST /api/sandbox/execute` - 在沙箱中执行代码
 - `POST /api/generate-pdf` - 生成 PDF 报告
+- `GET /api/pdfs/:filename` - 获取 PDF 文件
+
+### 新工具系统架构（Function Calling）
+
+后端实现了基于 DeepSeek Function Calling 的工具系统，替代了旧版 Agent 生成方式：
+
+**执行流程：**
+1. **规划阶段** - DeepSeek 分析任务，决定调用哪些工具
+2. **执行阶段** - 并行执行所有工具调用（最大并发数：5）
+3. **合成阶段** - 将工具结果反馈给 LLM 生成最终回答
+
+**SSE 流式输出：**
+前端通过 EventSource 接收实时更新：
+- `init` - 任务初始化
+- `thought` - 思考/规划状态更新
+- `tool_start` - 工具开始执行
+- `tool_result` - 工具执行结果
+- `final` - 最终回答
+- `error` - 错误信息
+
+**工作空间隔离：**
+每个任务有独立的工作目录 `temp/{taskId}/`，工具生成的文件保存在此目录，通过 `/api/files/{taskId}/{filename}` 安全下载。
+
+**并发控制：**
+使用自定义的 p-limit 兼容实现，最大并发数为 5。
+
+**定时清理：**
+使用 `node-cron` 每小时清理超过 24 小时的临时目录。
 
 ### 图像生成功能
 
@@ -215,20 +252,24 @@ python tools/diagnose.py --fix-ddgs
 **支持的 API：**
 | API | 免费额度 | 说明 |
 |-----|----------|------|
-| Stability AI | ✅ 免费 25 积分 | 推荐，稳定可靠 |
+| MiniMax | ✅ 免费额度 | 主要使用的图像生成服务（推荐） |
+| Stability AI | ✅ 免费 25 积分 | 备选方案 |
 | DALL-E | ⚠️ 有免费额 | 需要 OpenAI API Key |
 
 **环境配置：**
 ```bash
-# Stability AI (推荐)
+# MiniMax API（图像生成，推荐）
+MINIMAX_API_KEY=your-minimax-key
+
+# Stability AI（备选）
 STABILITY_API_KEY=sk-your-stability-key
 
 # 或 OpenAI DALL-E
-OPENAI_API_KEY=sk-your-openai-key
+# OPENAI_API_KEY=sk-your-openai-key
 ```
 
 **使用方式：**
-系统会自动识别图像生成任务（如"生成图片"、"分镜"、"视频"等关键词），并调用图像生成 API。
+系统会自动识别图像生成任务（如"生成图片"、"分镜"、"视频"等关键词），并调用图像生成 API。批量生成（>5张）会自动拆分并行执行。
 
 ## 环境变量配置
 
@@ -239,7 +280,10 @@ OPENAI_API_KEY=sk-your-openai-key
 DEEPSEEK_API_KEY=your-deepseek-key
 
 # 图像生成 API (免费)
-# Stability AI: https://platform.stability.ai/
+# MiniMax (推荐): https://platform.minimaxi.com/
+MINIMAX_API_KEY=your-minimax-key
+
+# 或 Stability AI: https://platform.stability.ai/
 STABILITY_API_KEY=your-stability-key
 
 # 或 OpenAI DALL-E
@@ -251,7 +295,7 @@ VITE_API_URL=http://localhost:3001/api
 
 **注意**：
 - 联网搜索使用 DuckDuckGo HTML（免费），无需额外 API Key
-- 图像生成推荐使用 Stability AI（新用户免费 25 积分）
+- 图像生成推荐使用 MiniMax 或 Stability AI
 
 ## TypeScript 配置
 
@@ -261,6 +305,17 @@ VITE_API_URL=http://localhost:3001/api
 - **JSX**: `react-jsx`
 - **目标**: ES2022
 - **类型导入**: 必须使用 `import type`（`verbatimModuleSyntax` 要求）
+
+## ESLint 配置
+
+- `@eslint/js` - Base JavaScript rules
+- `typescript-eslint` - TypeScript 支持
+- `eslint-plugin-react-hooks` - React hooks 规则
+- `eslint-plugin-react-refresh` - HMR-safe code checks
+
+**特殊规则：**
+- `src/components/ui/**/*.tsx` 目录关闭了 `react-refresh/only-export-components`，允许同时导出组件和 variant
+- `noUnusedLocals`、`noUnusedParameters` - 禁止未使用的变量和参数
 
 ## 代码规范
 
@@ -275,6 +330,84 @@ VITE_API_URL=http://localhost:3001/api
 - 使用内存存储（Map）管理用户、任务和执行记录
 - 沙箱执行：代码写入临时 `.cjs` 文件，通过 `node` 命令执行
 - 支持从 `.env` 文件加载环境变量
+
+**并发控制：**
+- 最大并发任务数：5（使用 p-limit 兼容实现）
+
+**临时目录结构：**
+```
+temp/
+├── {taskId}/           # 任务工作空间
+│   ├── slides_config.json  # PPT 配置文件
+│   ├── presentation.pptx   # 生成的 PPT
+│   └── ...
+code-sandbox/
+├── exec_{uuid}.cjs     # 沙箱执行的临时代码文件
+generated-pdfs/
+└── {filename}.pdf      # 生成的 PDF 文件
+```
+
+**定时清理：**
+- 每小时自动清理超过 24 小时的临时目录（使用 `node-cron`）
+- 启动时执行一次清理
+
+## Skills 系统
+
+项目集成了 Claude Code Skills（位于 `skills/` 目录），用于增强 Claude Code 的交互能力和提供专业领域指导。
+
+### Skill 文件格式
+
+每个 Skill 是一个包含 frontmatter 的 Markdown 文件 (`SKILL.md`)：
+
+```yaml
+---
+name: skill-name
+description: "Skill description for matching"
+metadata: {"nanobot": {"emoji": "🦞", "requires": {"bins": ["gh"]}}}
+---
+
+# Skill 内容
+
+具体的使用指南、命令示例等...
+```
+
+### 可用 Skills
+
+| Skill | 用途 | 触发条件 |
+|-------|------|----------|
+| `github` | GitHub CLI 操作 | PR、Issue、CI 相关任务 |
+| `doc-coauthoring` | 文档协作编写 | 编写技术文档、PRD、RFC |
+| `mcp-builder` | MCP Server 开发 | 构建 Model Context Protocol 服务 |
+| `clawhub` | Skill 注册表搜索 | "find a skill", "install skill" |
+| `canvas-design` | Canvas 设计 | 图像/字体设计任务 |
+| `algorithmic-art` | 算法艺术生成 | 程序化艺术生成 |
+| `docx` | Word 文档处理 | .docx 文件操作 |
+| `frontend-design` | 前端设计 | UI/UX 设计任务 |
+| `brand-guidelines` | 品牌规范 | 品牌一致性检查 |
+| `cron` | 定时任务 | cron 表达式相关 |
+| `internal-comms` | 内部沟通 | 团队沟通文档 |
+| `pdf` | PDF 处理 | PDF 生成与处理 |
+| `memory` | 记忆管理 | 长期记忆相关 |
+
+### ClawHub Skill 注册表
+
+使用 ClawHub 搜索和安装公共 Skills：
+
+```bash
+# 搜索技能
+npx --yes clawhub@latest search "web scraping" --limit 5
+
+# 安装技能
+npx --yes clawhub@latest install <slug> --workdir ~/.nanobot/workspace
+
+# 更新所有技能
+npx --yes clawhub@latest update --all --workdir ~/.nanobot/workspace
+
+# 列出已安装
+npx --yes clawhub@latest list --workdir ~/.nanobot/workspace
+```
+
+**注意**：安装后需要重启 Claude Code 会话以加载新 Skill。
 
 ## 参考文档
 
